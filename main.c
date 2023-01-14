@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <sys/stat.h>
+#include <windows.h>
 #define maximum_size_of_input 1000000
 
 void main_function(); // this function is the input receiver of the program
@@ -12,11 +13,20 @@ void insertstr(char *); // command 2
 FILE *find_path(char * , char * , int *); // this function find path of a command
 void find_string(char * , char * , int *); // this function find string after --str and saves it ro second argument
 bool find_position(char * , int * , int *); // this function find positon after --pos and if it has bad syntax return 0
-bool go_to_position(FILE * , int , int , char *); // this function moves the file pointer to the supposed line and column
+bool go_to_position(FILE * , int , int , char * ,int *); // this function moves the file pointer to the supposed line and column
 void save_text(FILE *, char *); // this function copies from file pointer to EOF in second argument
 void back_the_text(FILE * , char * , int , char *); // this function pastes the copied text to the file pointer, third argument is required spaces
 void cat(char *); // command 3
 void removestr(char *); // command 4
+bool find_size(char * , int *); // this function converts a string to an integer
+void find_first_position_with_size(FILE * , int , int , int , int); // this function finds the first position (according to -b and -f) and pushes the file pointer to that position
+// file pointer , line , col , size , mode (-b or -f)
+void save_text_from_first(FILE * , char *); // this function copies some texts that starts from first of file
+void append(FILE * , char *); // this function appends a text to the end of file
+void copystr(char *); // command 5
+void cutstr(char *); // command 6
+
+
 
 /*
  * first Name: Farzam
@@ -47,6 +57,8 @@ void main_function()
         cat(input);
     } else if (strcmp (input , "removestr") == 0) {
         removestr(input);
+    } else if (strcmp (input , "copystr") == 0) {
+        copystr(input);
     }
     else {
         printf("invalid command\n");
@@ -161,13 +173,14 @@ void insertstr(char *command)
         printf("invalid command\n");
         return;
     }
-    go_to_position(file , line , col , "insert");
-    go_to_position(file , line , col , "insert");
+    int null;
+    go_to_position(file , line , col , "insert" , &null);
+    go_to_position(file , line , col , "insert" , &null);
     char *copy = (char *)calloc(maximum_size_of_input , sizeof(char));
     save_text(file , copy);
     fseek(file , 0 , SEEK_SET);
     FILE *file2 = file;
-    go_to_position(file2 ,line , col , "insert");
+    go_to_position(file2 ,line , col , "insert" , &null);
     FILE *file3;
     fseek(file2 , ftell(file2), SEEK_SET);
     file3 = file2;
@@ -319,15 +332,19 @@ bool find_position(char *pos , int *line , int *col)
     return true;
 }
 
-bool go_to_position(FILE *file , int line , int col , char *mode)
+bool go_to_position(FILE *file , int line , int col , char *mode , int *moved)
 {
+    *moved = 0;
     fseek(file , 0 , SEEK_SET);
     int now_line = 1 , now_col = 0;
     char now_char = '\0';
     while (line != 1 && now_char != EOF) {
         now_char = fgetc(file);
-        if (now_char == EOF)
+        if (now_char == EOF) {
+            *moved = -1;
             break;
+        }
+        (*moved)++;
         if (now_char == '\n')
             now_line++;
         if (now_line == line)
@@ -344,6 +361,7 @@ bool go_to_position(FILE *file , int line , int col , char *mode)
     if (strcmp(mode , "help") == 0)
         return true;
     if (now_char == EOF) {
+        *moved = -1;
         if (strcmp(mode , "insert") != 0) {
             return false;
         }
@@ -354,18 +372,22 @@ bool go_to_position(FILE *file , int line , int col , char *mode)
         while (now_col < col) {
             now_char = fgetc(file);
             if (now_char != '\n' && now_char != EOF) {
+                *(moved)++;
                 now_col++;
             }
             else
                 break;
         }
+        if (now_char == EOF)
+            *moved = -1;
         if (now_col < col) {
             if (strcmp(mode , "insert") != 0) {
                 return false;
             }
             char *copy = (char *) calloc(maximum_size_of_input , sizeof(char));
             save_text(file , copy);
-            go_to_position(file , line , col , "help");
+            int null;
+            go_to_position(file , line , col , "help" , &null);
             for (int i = 0; i != now_col; i++) {
                 now_char = fgetc(file);
             }
@@ -402,7 +424,7 @@ void back_the_text(FILE *file , char *copy , int spaces , char *mode)
         fputc('\n', file);
     }
     for (int i = 0; i != strlen(copy); i++)
-       fputc(copy[i] , file);
+        fputc(copy[i] , file);
     return;
 }
 
@@ -438,6 +460,170 @@ void cat(char *command)
 
 void removestr(char *command)
 {
+    char *path = calloc(maximum_size_of_input , sizeof(char));
+    command = strtok(NULL , "");
+    strcpy(path , command);
+    char *resume = (char *) calloc(maximum_size_of_input , sizeof(char));
+    strcpy(resume , command);
+    strtok(command , " ");
+    if (command == NULL || strcmp(command , "--file") != 0) {
+        printf("invalid command\n");
+        return;
+    }
+    int skip;
+    FILE *file = find_path(command , "r+", &skip);
+    if (file == NULL) {
+        printf("invalid command\n");
+        return;
+    }
+    resume += 7 + skip;
+    if (resume == NULL || resume[0] != ' ') {
+        printf("invalid command\n");
+        return;
+    }
+    resume += 1;
+    if (resume == NULL) {
+        printf("invalid command\n");
+        return;
+    }
+    char *pos = (char *)calloc(strlen(resume) + 1 ,sizeof(char));
+    char *pos2 = (char *)calloc(strlen(resume) + 1 ,sizeof(char));
+    strcpy(pos , resume);
+    pos2[0] = '\0';
+    int line , col;
+    strtok(pos , " ");
+    if (pos == NULL) {
+        printf("invalid command\n");
+        return;
+    }
+    strcat(pos2 , pos);
+    pos = strtok(NULL , " ");
+    if (pos == NULL) {
+        printf("invalid command\n");
+        return;
+    }
+    strcat(pos2 , " ");
+    strcat(pos2 , pos);
+    bool flag = find_position(pos2 , &line , &col);
+    if (!flag) {
+        printf("invalid command\n");
+        return;
+    }
+    strcpy(resume , pos);
+    resume += strlen(pos2);
+    if (resume == NULL || resume[0] != ' ') {
+        printf("invalid command\n");
+        return;
+    }
+    resume++;
+    if (resume == NULL) {
+        printf("invalid command\n");
+        return;
+    }
+    strtok(resume , " ");
+    resume = strtok(NULL , " ");
+    if (resume == NULL || strcmp(resume , "-size") != 0) {
+        printf("invalid command\n");
+        return;
+    }
+    resume = strtok(NULL , " ");
+    if (resume == NULL) {
+        printf("invalid command\n");
+        return;
+    }
+    int size;
+    flag = find_size(resume , &size);
+    if (!flag) {
+        printf("invalid command\n");
+        return;
+    }
+    resume = strtok(NULL , " ");
+    if (resume == NULL) {
+        printf("invalid command\n");
+        return;
+    }
+    int direction;
+    if (strcmp(resume , "-b") == 0)
+        direction = -1;
+    else if (strcmp(resume , "-f") == 0)
+        direction = 1;
+    else {
+        printf("invalid command\n");
+        return;
+    }
+    find_first_position_with_size(file , line , col , size , direction);
+    FILE *file2 = file;
+    char *copy1 = (char *)calloc(maximum_size_of_input , sizeof(char));
+    save_text_from_first(file2 , copy1);
+    char *copy2 = (char *)calloc(maximum_size_of_input , sizeof(char));
+    for (int i = 0; i != size; i++) {
+        fgetc(file2);
+    }
+    save_text(file2 , copy2);
+    fclose(file2);
+    strtok(path , " ");
+    int null;
+    FILE *file3 = find_path(path , "w+" , &null);
+    append(file3 , copy1);
+    append(file3 , copy2);
+    fclose(file3);
+    fclose(file);
+    fclose(file2);
+}
+
+bool find_size(char *size , int *result){
+    int res = 0;
+    for (int i = 0; i != strlen(size); i++) {
+        if (size[i] < '0' || size[i] > '9') {
+            return false;
+        }
+        res *= 10;
+        res += (size[i] - '0');
+    }
+    *result = res;
+    return true;
+}
+
+void find_first_position_with_size(FILE *file , int line , int col , int size , int type) {
+    int moved = 0;
+    if (type == 1) {
+        go_to_position(file , line , col , "remove" , &moved);
+    } else {
+        go_to_position(file , line , col , "remove" , &moved);
+        moved = ftell(file);
+        fseek(file , 0 , SEEK_SET);
+        int chars = 0;
+        char check;
+        while (ftell(file) <= moved) {
+            check = fgetc(file);
+            chars++;
+            if (check == EOF)
+                fputc('\0' , file);
+        }
+        fseek(file, 0, SEEK_SET);
+        for (int i = 0; i != chars - size - 1; i++)
+            fgetc(file);
+    }
+}
+
+void save_text_from_first(FILE *file , char *copy) {
+    int now = ftell(file) , i = 0;
+    fseek(file , 0 , SEEK_SET);
+    char now_char;
+    while (ftell(file) < now) {
+        now_char = fgetc(file);
+        copy[i] = now_char;
+        i++;
+    }
+    copy[i] = '\0';
+}
+
+void append(FILE *file , char *text){
+    for (int i = 0; i != strlen(text); i++)
+        fputc(text[i] , file);
+}
+
+void copystr(char *command) {
     command = strtok(NULL , "");
     char *resume = (char *) calloc(maximum_size_of_input , sizeof(char));
     strcpy(resume , command);
@@ -496,7 +682,59 @@ void removestr(char *command)
         printf("invalid command\n");
         return;
     }
-    printf("%s\n" , resume);
+    strtok(resume , " ");
+    resume = strtok(NULL , " ");
+    if (resume == NULL || strcmp(resume , "-size") != 0) {
+        printf("invalid command\n");
+        return;
+    }
+    resume = strtok(NULL , " ");
+    if (resume == NULL) {
+        printf("invalid command\n");
+        return;
+    }
+    int size;
+    flag = find_size(resume , &size);
+    if (!flag) {
+        printf("invalid command\n");
+        return;
+    }
+    resume = strtok(NULL , " ");
+    if (resume == NULL) {
+        printf("invalid command\n");
+        return;
+    }
+    int direction;
+    if (strcmp(resume , "-b") == 0)
+        direction = -1;
+    else if (strcmp(resume , "-f") == 0)
+        direction = 1;
+    else {
+        printf("invalid command\n");
+        return;
+    }
+    find_first_position_with_size(file , line , col , size , direction);
+    FILE *file2 = file;
+    char *copy = (char *)calloc(maximum_size_of_input , sizeof(char));
+    int i;
+    for (i = 0; i != size; i++)
+        copy[i] = fgetc(file2);
+    copy[i] = '\0';
+    const size_t len = strlen(copy) + 1;
+    HGLOBAL hMem =  GlobalAlloc(GMEM_MOVEABLE, len);
+    memcpy(GlobalLock(hMem), copy, len);
+    GlobalUnlock(hMem);
+    OpenClipboard(0);
+    EmptyClipboard();
+    SetClipboardData(CF_TEXT, hMem);
+    CloseClipboard();
+    fclose(file);
+    fclose(file2);
+}
+
+void cutstr(char *command) {
+
 }
 
 // invalid inputs must check
+// eof error in removestr
