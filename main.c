@@ -4,20 +4,22 @@
 #include <stdbool.h>
 #include <sys/stat.h>
 #include <windows.h>
-#define maximum_size_of_input 1000000
+#define maximum_size_of_input 1000
+bool is_cut = false , is_find = true;
+char pathes[maximum_size_of_input];
 
 void main_function(); // this function is the input receiver of the program
 void createfile(char *); // this function creates a .txt file with specified path
-FILE *open_or_create_file(char * , char*); // this function open an existing file or creates a new file by supposed path
-void insertstr(char *); // command 2
-FILE *find_path(char * , char * , int *); // this function find path of a command
-void find_string(char * , char * , int *); // this function find string after --str and saves it ro second argument
+FILE *open_or_create_file(char * , char* , int); // this function open an existing file or creates a new file by supposed path
+void insertstr(char * , char * , char *); // command 2
+FILE *find_path(char * , char * , int * , int); // this function find path of a command
+bool find_string(char * , char * , int *); // this function find string after --str and saves it ro second argument
 bool find_position(char * , int * , int *); // this function find positon after --pos and if it has bad syntax return 0
 bool go_to_position(FILE * , int , int , char * ,int *); // this function moves the file pointer to the supposed line and column
 void save_text(FILE *, char *); // this function copies from file pointer to EOF in second argument
 void back_the_text(FILE * , char * , int , char *); // this function pastes the copied text to the file pointer, third argument is required spaces
 void cat(char *); // command 3
-void removestr(char *); // command 4
+void removestr(char * , char *); // command 4
 bool find_size(char * , int *); // this function converts a string to an integer
 void find_first_position_with_size(FILE * , int , int , int , int); // this function finds the first position (according to -b and -f) and pushes the file pointer to that position
 // file pointer , line , col , size , mode (-b or -f)
@@ -25,8 +27,10 @@ void save_text_from_first(FILE * , char *); // this function copies some texts t
 void append(FILE * , char *); // this function appends a text to the end of file
 void copystr(char *); // command 5
 void cutstr(char *); // command 6
-
-
+void pastestr(char *); // command 7
+void grep(char *); //command 8
+void find_grep(FILE * , char * , int , int , int *); // this function use for printing a line (by another function) that has some text (pattern)
+void print_the_line(char * , int , int * , int); // this function use for printing a line that starts after last_enter and push the index to next enter
 
 /*
  * first Name: Farzam
@@ -52,13 +56,19 @@ void main_function()
     if (strcmp(input , "createfile") == 0){
         createfile(input);
     } else if (strcmp(input , "insertstr") == 0) {
-        insertstr(input);
+        insertstr(input , "unnormal" , "");
     } else if (strcmp (input , "cat") == 0){
         cat(input);
     } else if (strcmp (input , "removestr") == 0) {
-        removestr(input);
+        removestr(input , "nothing");
     } else if (strcmp (input , "copystr") == 0) {
         copystr(input);
+    } else if (strcmp (input ,  "cutstr") == 0) {
+        cutstr(input);
+    } else if (strcmp (input , "pastestr") == 0) {
+        pastestr(input);
+    } else if (strcmp (input , "grep") == 0) {
+        grep(input);
     }
     else {
         printf("invalid command\n");
@@ -76,13 +86,13 @@ void createfile(char *command) {
     path[0] = '\0';
     command = strtok(NULL , "");
     strcpy(path , command);
-    FILE *file = open_or_create_file(path , "w");
+    FILE *file = open_or_create_file(path , "w" , -1);
     if (file != NULL) {
         fclose(file);
     }
 }
 
-FILE *open_or_create_file(char *path , char *type)
+FILE *open_or_create_file(char *path , char *type , int id)
 {
     if (path[0] == '\0')
     {
@@ -91,7 +101,10 @@ FILE *open_or_create_file(char *path , char *type)
     }
     if (path[0] == '/') {
         if (strlen(path) < 11) {
-            printf("invalid address\n");
+            if (id == -1)
+                printf("invalid address\n");
+            else
+                printf("Address of file %d is invalid\n" , id+1);
             return NULL;
         }
         if (path[1] == 'r' && path[2] == 'o' && path[3] == 'o' && path[4] == 't' && path[5] == '/' && path[strlen(path)-1] == 't' && path[strlen(path)-2] == 'x' && path[strlen(path)-3] == 't' && path[strlen(path)-4] == '.' && path[strlen(path)-5] != '/') {
@@ -102,7 +115,11 @@ FILE *open_or_create_file(char *path , char *type)
                 printf("This file exists\n");
                 return NULL;
             } else if (strcmp(type , "r+") == 0 && access(path, F_OK) == -1) {
-                printf("This file doesn't exist\n");
+                if (id == -1) {
+                    printf("This file doesn't exist\n");
+                } else {
+                    printf("File %d doesn't exists\n" , id+1);
+                }
                 return NULL;
             }
             strtok(path , "/");
@@ -115,22 +132,29 @@ FILE *open_or_create_file(char *path , char *type)
                     strcat(virual_path, "/");
                 }
             }
+            strcpy(pathes , virual_path);
             return fopen(virual_path , type);
         } else {
-            printf("invalid address\n");
+            if (id == -1)
+                printf("invalid address\n");
+            else
+                printf("Address of file %d is invalid\n" , id+1);
             return NULL;
         }
     } else if (path[0] == '"' && path[strlen(path)-1] == '"') {
         path++;
         path[strlen(path)-1] = '\0';
-        return open_or_create_file(path , type);
+        return open_or_create_file(path , type , id);
     } else {
-        printf("invalid address\n");
+        if (id == -1)
+            printf("invalid address\n");
+        else
+            printf("Address of file %d is invalid\n" , id+1);
         return NULL;
     }
 }
 
-void insertstr(char *command)
+void insertstr(char *command , char *mode , char *paste)
 {
     command = strtok(NULL , "");
     char *resume = (char *) calloc(maximum_size_of_input , sizeof(char));
@@ -141,7 +165,7 @@ void insertstr(char *command)
         printf("invalid command\n");
         return;
     }
-    FILE *file = find_path(command , "r+" , &skip);
+    FILE *file = find_path(command , "r+" , &skip , -1);
     if (file == NULL) {
         return;
     }
@@ -157,16 +181,22 @@ void insertstr(char *command)
         return;
     }
     char *string = (char *)calloc(strlen(resume) + 1 , sizeof(char));
-    char *help = (char *) calloc(maximum_size_of_input , sizeof(char));
-    strcpy(help , resume);
-    find_string(resume , string , &skip);
-    strcpy(resume , help);
-    resume += (skip + 6);
-    if (resume == NULL || resume[1] == '\0') {
-        printf("invalid command\n");
-        return;
+    if (strcmp(mode , "unnormal") == 0) {
+        char *help = (char *) calloc(maximum_size_of_input, sizeof(char));
+        strcpy(help, resume);
+        bool flag = find_string(resume, string, &skip);
+        if (!flag)
+            return;
+        strcpy(resume, help);
+        resume += (skip + 6);
+        if (resume == NULL || resume[1] == '\0') {
+            printf("invalid command\n");
+            return;
+        }
+        resume++;
+    } else {
+        strcpy(string , paste);
     }
-    resume++;
     int line = 0 , col = 0;
     bool flag = find_position(resume , &line , &col);
     if (!flag) {
@@ -192,7 +222,7 @@ void insertstr(char *command)
     fclose(file);
 }
 
-FILE *find_path(char *resume, char *type , int *skip)
+FILE *find_path(char *resume, char *type , int *skip , int id)
 {
     // this function starts with --file
     if (resume == NULL) {
@@ -210,7 +240,7 @@ FILE *find_path(char *resume, char *type , int *skip)
         char *path = (char *) calloc(strlen(resume)+1 , sizeof(char));
         strcpy(path , resume);
         *skip = strlen(path);
-        return open_or_create_file(path , type);
+        return open_or_create_file(path , type , id);
     }
     if (resume[0] == '\"') {
         char *path = (char *) calloc(maximum_size_of_input , sizeof(char));
@@ -223,74 +253,88 @@ FILE *find_path(char *resume, char *type , int *skip)
         }
         path[i+1] = '\0';
         *skip = strlen(path);
-        return open_or_create_file(path , type);
+        return open_or_create_file(path , type ,id);
     }
 }
 
-void find_string(char *resume , char *string , int *skip)
+bool find_string(char *resume , char *string , int *skip)
 {
     // this function starts with --str
-    char *help = (char *)calloc(maximum_size_of_input , sizeof(char));
-    strtok(resume , " ");
-    if (resume == NULL || strcmp(resume , "--str") != 0) {
+    char *help = (char *) calloc(maximum_size_of_input, sizeof(char));
+    strtok(resume, " ");
+    if (resume == NULL || strcmp(resume, "--str") != 0) {
         printf("invalid command\n");
-        return;
+        return false;
     }
-    resume = strtok(NULL , "");
-    strcpy(help , resume);
-    if (resume == NULL){
+    resume = strtok(NULL, "");
+    strcpy(help, resume);
+    if (resume == NULL) {
         printf("invalid command\n");
-        return;
+        return false;
     }
     if (resume[0] != '\"') {
-        strtok(resume , " ");
-        int j = 0 , i = 0;
-        for (; i != strlen(resume); i++)
-        {
+        strtok(resume, " ");
+        int j = 0, i = 0;
+        for (; i != strlen(resume); i++) {
             if (resume[i] == '\\') {
-                if (resume[i+1] == 'n') {
+                if (resume[i + 1] == 'n') {
                     i++;
                     string[j] = '\n';
                     j++;
                 } else {
-                    string[j] = resume[i+1];
+                    string[j] = resume[i + 1];
                     i++;
                     j++;
                 }
             } else {
-                string[j] = resume[i];
-                j++;
+                if (is_find) {
+                    if (resume[i] == '*') {
+                        string[j] = 254;
+                    }
+                    else
+                        string[j] = resume[i];
+                    j++;
+                } else {
+                    string[j] = resume[i];
+                    j++;
+                }
             }
         }
         *skip = i;
-        strcpy(resume , help);
-        return;
-    }
-    else {
-        int j = 0 , i = 0;
+        strcpy(resume, help);
+        return true;
+    } else {
+        int j = 0, i = 0;
         for (; i != strlen(resume); i++) {
-            if (resume[i+1] == '\\') {
-                if (resume[i+2] == 'n'){
+            if (resume[i + 1] == '\\') {
+                if (resume[i + 2] == 'n') {
                     string[j] = '\n';
                     j++;
                     i++;
                 } else {
-                    string[j] = resume[i+2];
+                    string[j] = resume[i + 2];
                     i++;
                     j++;
                 }
-            } else if (resume[i+1] == '\"') {
+            } else if (resume[i + 1] == '\"') {
                 break;
             } else {
-                string[j] = resume[i+1];
-                j++;
+                if (is_find) {
+                    if (resume[i+1] == '*') {
+                        string[j] = 254;
+                    } else
+                        string[j] = resume[i+1];
+                    j++;
+                } else {
+                    string[j] = resume[i + 1];
+                    j++;
+                }
             }
         }
-        *skip = i+2;
-        strcpy(resume , help);
-        return;
+        *skip = i + 2;
+        strcpy(resume, help);
+        return true;
     }
-    return;
 }
 
 bool find_position(char *pos , int *line , int *col)
@@ -440,7 +484,7 @@ void cat(char *command)
         return;
     }
     int skip;
-    FILE *file = find_path(command , "r+" , &skip);
+    FILE *file = find_path(command , "r+" , &skip ,-1);
     if (file == NULL) {
         return;
     }
@@ -458,7 +502,7 @@ void cat(char *command)
     fclose(file);
 }
 
-void removestr(char *command)
+void removestr(char *command , char *mode)
 {
     char *path = calloc(maximum_size_of_input , sizeof(char));
     command = strtok(NULL , "");
@@ -471,7 +515,7 @@ void removestr(char *command)
         return;
     }
     int skip;
-    FILE *file = find_path(command , "r+", &skip);
+    FILE *file = find_path(command , "r+", &skip , -1);
     if (file == NULL) {
         printf("invalid command\n");
         return;
@@ -556,19 +600,32 @@ void removestr(char *command)
     char *copy1 = (char *)calloc(maximum_size_of_input , sizeof(char));
     save_text_from_first(file2 , copy1);
     char *copy2 = (char *)calloc(maximum_size_of_input , sizeof(char));
-    for (int i = 0; i != size; i++) {
-        fgetc(file2);
+    char clipboard[size+1];
+    int i;
+    for (i = 0; i != size; i++) {
+        clipboard[i] = fgetc(file2);
+    }
+    clipboard[i] = '\0';
+    if (strcmp(mode , "cut") == 0) {
+        const size_t len = strlen(clipboard) + 1;
+        HGLOBAL hMem =  GlobalAlloc(GMEM_MOVEABLE, len);
+        memcpy(GlobalLock(hMem), clipboard, len);
+        GlobalUnlock(hMem);
+        OpenClipboard(0);
+        EmptyClipboard();
+        SetClipboardData(CF_TEXT, hMem);
+        CloseClipboard();
+        is_cut = true;
     }
     save_text(file2 , copy2);
     fclose(file2);
+    fclose(file);
     strtok(path , " ");
     int null;
-    FILE *file3 = find_path(path , "w+" , &null);
+    FILE *file3 = find_path(path , "w+" , &null , -1);
     append(file3 , copy1);
     append(file3 , copy2);
     fclose(file3);
-    fclose(file);
-    fclose(file2);
 }
 
 bool find_size(char *size , int *result){
@@ -633,7 +690,7 @@ void copystr(char *command) {
         return;
     }
     int skip;
-    FILE *file = find_path(command , "r+", &skip);
+    FILE *file = find_path(command , "r+", &skip , -1);
     if (file == NULL) {
         printf("invalid command\n");
         return;
@@ -730,11 +787,132 @@ void copystr(char *command) {
     CloseClipboard();
     fclose(file);
     fclose(file2);
+    is_cut = false;
 }
 
 void cutstr(char *command) {
-
+    removestr(command , "cut");
+    // har chi talash kardam ke tarkibi az copy va remove beshe, nashod :(
 }
+
+void pastestr(char *command) {
+    HANDLE h;
+    OpenClipboard(NULL);
+    h = GetClipboardData(CF_TEXT);
+    char *paste = (char *)h;
+    CloseClipboard();
+    insertstr(command , "normal" , paste);
+    if (is_cut == true) {
+        OpenClipboard(NULL);
+        EmptyClipboard();
+        CloseClipboard();
+        is_cut = false;
+    }
+    return;
+}
+
+void grep(char *command) {
+    int mode = 0 , lines = 0;
+    // mode == 0 normal -- mode == 1 -- -c -- mode == 2 -- -l
+    command = strtok(NULL , "");
+    char *newcommand = (char *) calloc(maximum_size_of_input , sizeof(char));
+    strcpy(newcommand , "\0");
+    strcpy(newcommand , command);
+    char *pattern = (char *) calloc(maximum_size_of_input , sizeof(char));
+    char *help = (char *) calloc(maximum_size_of_input , sizeof(char));
+    int skip;
+    strcpy(pattern , "\0");
+    strcpy(help , "\0");
+    strcpy(help , newcommand);
+    strtok(help , " ");
+    if (strcmp(help , "--str") != 0) {
+        if (strcmp(help , "-c") == 0) {
+            mode = 1;
+        } else if (strcmp(help , "-l") == 0){
+            mode = 2;
+        }
+        strtok(newcommand , " ");
+        newcommand = strtok(NULL , "");
+    }
+    find_string(newcommand, pattern , &skip);
+    command += (7 + skip);
+    if (mode != 0)
+        command += 3;
+    strcpy(newcommand , command);
+    int i = 0;
+    while (newcommand != NULL) {
+        strtok(newcommand , " ");
+        if (newcommand == NULL)
+            break;
+        FILE *file = find_path(newcommand , "r+" , &skip , i);
+        i++;
+        int before = lines;
+        find_grep(file , pattern , i , mode , &lines);
+        if (before != lines && mode == 2)
+            printf("%s\n" , pathes);
+        fclose(file);
+        file = NULL;
+        command += 8+skip;
+        if (command == NULL || command[0] == '\0')
+            break;
+        command++;
+        strcpy(help , "--files ");
+        strcat(help , command);
+        strcpy(command , help);
+        strcpy(newcommand , command);
+    }
+    if (mode == 1)
+        printf("%d\n" , lines);
+}
+
+void find_grep(FILE *file , char *pattern , int id , int mode , int *lines) {
+    char *text = (char *) calloc(1000000 , sizeof(char));
+    fseek(file , 0 , SEEK_END);
+    save_text_from_first(file , text);
+    int last_enter = -1 , j = 0;
+    for (int i = 0; i < strlen(text); i++) {
+        if (j == strlen(pattern)) {
+            if (mode == 0) {
+                printf("%s: ", pathes);
+                print_the_line(text, last_enter, &i , mode);
+            } if (mode == 1 || mode == 2)
+                print_the_line(text, last_enter, &i , mode);
+            (*lines)++;
+            j = 0;
+            // i go to eof or \n
+            // and print the line after the last_enter
+        }
+        if (text[i] == '\n')
+            last_enter = i;
+        if (text[i] == pattern[j])
+            j++;
+        else {
+            i -= j;
+            j = 0;
+        }
+    }
+}
+
+void print_the_line(char *text , int last_enter , int *ind , int mode) {
+    int i = last_enter;
+    if (last_enter == -1)
+        i = 0;
+    while (text[i] == '\n' || text[i] == '\0')
+        i++;
+    while (text[i] != '\n' && text[i] != '\0') {
+        if (mode == 0)
+            printf("%c" , text[i]);
+        i++;
+    }
+    if (mode == 0)
+        printf("\n");
+    *ind = i;
+}
+
 
 // invalid inputs must check
 // eof error in removestr
+// checking pos for all :(
+// .txt is not important :(
+// backslash gheir mortabet
+// enter and eof is ignored in find
